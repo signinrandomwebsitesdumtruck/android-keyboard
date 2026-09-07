@@ -71,7 +71,6 @@ import kotlin.math.min
 
 object ChineseIMESettings {
     enum class ChineseSimplificationMode(val stringResource: Int) {
-        // These must not be renamed, or the existing setting value for users will break
         ByLanguage(R.string.chinese_setting_simplification_simplify_by_language_country),
         Simplified(R.string.chinese_setting_simplification_force_simplified),
         Traditional(R.string.chinese_setting_simplification_force_traditional);
@@ -82,14 +81,14 @@ object ChineseIMESettings {
         val displayNameEN: String,
         val rimeId: String
     ) {
-        // These must not be renamed, or the existing setting value for users will break
         FullPinyin("全拼", "Full Pinyin", "luna_pinyin"),
         Natural("自然碼雙拼", "Double Pinyin", "double_pinyin"),
         ABC("智能ABC雙拼", "Double Pinyin - ABC", "double_pinyin_abc"),
         FlyPY("小鶴雙拼", "Double Pinyin - flyPY", "double_pinyin_flypy"),
         MS("微軟雙拼", "Double Pinyin - MS", "double_pinyin_mspy"),
         PYJJ("拼音加加雙拼", "Double Pinyin - PYJJ", "double_pinyin_pyjj"),
-        ST("四通雙拼", "Double Pinyin - ST", "double_pinyin_st");
+        ST("四通雙拼", "Double Pinyin - ST", "double_pinyin_st"),
+        Jyutping("粵拼 Jyutping", "Jyutping", "jyutping");
     }
 
     internal fun initialPatch(pattern: String, substitution: String, twoWay: Boolean)
@@ -105,7 +104,6 @@ object ChineseIMESettings {
     }
 
     enum class FuzzyPinyinModes(val schemePatch: List<String>, val displayName: String) {
-        // These must not be renamed, or the existing setting value for users will break
         Z_ZH(initialPatch("z", "zh", true), "z = zh"),
         C_CH(initialPatch("c", "ch", true), "c = ch"),
         S_SH(initialPatch("s", "sh", true), "s = sh"),
@@ -173,7 +171,7 @@ object ChineseIMESettings {
                     val sharedDir = ChineseIME.getShared(context)
                     val files = (sharedDir.listFiles() ?: emptyArray()).map { it.name.split('.').first() }.toSet()
                     PinyinScheme.entries.filter {
-                        files.contains(it.rimeId) || it == PinyinScheme.FullPinyin
+                        files.contains(it.rimeId) || it == PinyinScheme.FullPinyin || it == PinyinScheme.Jyutping
                     }
                 }
                 DropDownPickerSettingItem<PinyinScheme>(
@@ -271,7 +269,7 @@ class ChineseIME(val helper: IMEHelper) : IMEInterface, SuggestionStripViewAcces
 
         @JvmStatic
         fun getRimeDir(context: Context) = context.getExternalFilesDir("rime")
-                ?: throw IllegalStateException("Failed to access ExternalFilesDir!")
+            ?: throw IllegalStateException("Failed to access ExternalFilesDir!")
 
         @JvmStatic
         fun getShared(context: Context) = File(getRimeDir(context), "shared")
@@ -293,8 +291,6 @@ class ChineseIME(val helper: IMEHelper) : IMEInterface, SuggestionStripViewAcces
 
             val name = context.getSetting(namePref, "?")
 
-
-
             if((localPrevExtractedDictionaryName ?: context.getSetting(PreviouslyExtractedDictionaryName)) == name) {
                 return false
             }
@@ -304,9 +300,6 @@ class ChineseIME(val helper: IMEHelper) : IMEInterface, SuggestionStripViewAcces
                 shared.walkBottomUp()
                     .fold(true) { res, it -> (it == shared || it.delete() || !it.exists()) && res }
 
-                // We are intentionally checking this only after deleting the shared directory
-                // This is because if the user deletes the dictionary file, we want to apply
-                // the deletion (TODO: It doesn't apply)
                 if(filePath.isEmpty()) return true
                 if(!file.exists()) return true
 
@@ -337,7 +330,7 @@ class ChineseIME(val helper: IMEHelper) : IMEInterface, SuggestionStripViewAcces
     private fun handlePassByMessage(x11Code: Int, mask: Int) {
         when (x11Code) {
             XK_BackSpace -> sendDownUpKeyEvent(KeyEvent.KEYCODE_DEL, 0)
-            XK_Tab       -> sendDownUpKeyEvent(KeyEvent.KEYCODE_TAB, 0)
+            XK_Tab    -> sendDownUpKeyEvent(KeyEvent.KEYCODE_TAB, 0)
             XK_Linefeed  -> sendDownUpKeyEvent(KeyEvent.KEYCODE_ENTER, 0)
             XK_Return    -> sendDownUpKeyEvent(KeyEvent.KEYCODE_ENTER, 0)
             else -> {
@@ -369,8 +362,6 @@ class ChineseIME(val helper: IMEHelper) : IMEInterface, SuggestionStripViewAcces
         }
         is RimeMessage.Sync -> when (msg.value) {
             SyncStage.Unknown -> Log.e(TAG, "Sync: Failed")
-//            SyncStage.Startup ->
-//            SyncStage.Success ->
             else -> {}
         }
         is RimeMessage.Commit -> {
@@ -397,12 +388,9 @@ class ChineseIME(val helper: IMEHelper) : IMEInterface, SuggestionStripViewAcces
         editingState = EditingState.Editing
     }
 
-    // This assumes that the only valid characters for input simulation are ASCII letters
-    // In particular, some characters like space will break the input by ending composition
-    // (Maybe there are other valid symbols potentially?)
     private fun safeguardInputStringForSimulation(input: String): String {
         var string = input
-        string = string.filter { it in 'a'..'z' || it in 'A'..'Z' }
+        string = string.filter { it in 'a'..'z' || it in 'A'..'Z' || it.isDigit() }
         return string
     }
 
@@ -429,7 +417,6 @@ class ChineseIME(val helper: IMEHelper) : IMEInterface, SuggestionStripViewAcces
             rime.clearComposition()
 
             if(candidateWord != null && candidateIndex != null) {
-                // TODO: This is kind of a buggy way of doing it
                 waitingToSelect = candidateWord to candidateIndex
             }
 
@@ -481,7 +468,6 @@ class ChineseIME(val helper: IMEHelper) : IMEInterface, SuggestionStripViewAcces
             candidate.comment
         ) }.let { ArrayList(it) }
 
-        // Don't flicker an empty suggest bar when editing
         if(editingState != EditingState.NotEditing && suggestWordList.isEmpty()) {
             return@onEach
         }
@@ -556,8 +542,6 @@ class ChineseIME(val helper: IMEHelper) : IMEInterface, SuggestionStripViewAcces
         }
     }
 
-
-
     private data class Configuration(
         val schema: String,
         val learning: Boolean,
@@ -582,7 +566,6 @@ class ChineseIME(val helper: IMEHelper) : IMEInterface, SuggestionStripViewAcces
             appendLine("          states: [ 漢字, 汉字 ]")
             appendLine("    simplifier/option_name: futo_zh_simp")
 
-            // Fuzzy pinyin only added to pinyin layouts
             if(schema.startsWith("luna_pinyin")) {
                 appendLine("    speller/algebra:")
                 cfg.fuzzyMode.forEach {
@@ -615,12 +598,9 @@ class ChineseIME(val helper: IMEHelper) : IMEInterface, SuggestionStripViewAcces
                     ?: ChineseIMESettings.PinyinScheme.FullPinyin
                 val schema = when (layoutHint) {
                     "qwerty" -> {
-                        when {
-                            pinyinScheme == ChineseIMESettings.PinyinScheme.FullPinyin -> when {
-                                simplified -> "luna_pinyin_simp"
-                                else -> "luna_pinyin"
-                            }
-
+                        when (pinyinScheme) {
+                            ChineseIMESettings.PinyinScheme.Jyutping -> "jyutping"
+                            ChineseIMESettings.PinyinScheme.FullPinyin -> if (simplified) "luna_pinyin_simp" else "luna_pinyin"
                             else -> pinyinScheme.rimeId
                         }
                     }
@@ -707,7 +687,6 @@ class ChineseIME(val helper: IMEHelper) : IMEInterface, SuggestionStripViewAcces
     }
 
     private fun sendDownUpKeyEvent(keyCode: Int, metaState: Int = 0) {
-        // NOTE: Modified based on InputLogic
         val eventTime = SystemClock.uptimeMillis()
         connect?.sendKeyEvent(
             KeyEvent(
@@ -751,14 +730,12 @@ class ChineseIME(val helper: IMEHelper) : IMEInterface, SuggestionStripViewAcces
                 }.let { when (it) {
                     '\b'.code -> XK_BackSpace
                     '\t'.code -> XK_Tab
-                    '\n'.code -> XK_Return // Use return instead of linefeed here.
+                    '\n'.code -> XK_Return
                     '\r'.code -> XK_Return
                     else -> it
                 } }
 
                 if(!editingState.active) {
-                    // Only update outside editing state. We cannot update inside editing state,
-                    // because the cursor position is unknown and we assume it's always at the end
                     if(x11Code == XK_BackSpace) {
                         rawInput.backspace()
                     } else if(x11Code == XK_Return || x11Code == ' '.code) {
@@ -793,9 +770,7 @@ class ChineseIME(val helper: IMEHelper) : IMEInterface, SuggestionStripViewAcces
             Event.EVENT_TYPE_DOWN_UP_KEYEVENT -> {
                 interruptInput()
                 if (event.mX == KeyEvent.META_CTRL_ON) when (event.mKeyCode) {
-                    KeyEvent.KEYCODE_F1 -> {
-
-                    }
+                    KeyEvent.KEYCODE_F1 -> {}
                     KeyEvent.KEYCODE_F2 -> {
                         Log.d(TAG, "Redeploying...")
                         coroScope.launch { rime.deploy() }
@@ -836,9 +811,7 @@ class ChineseIME(val helper: IMEHelper) : IMEInterface, SuggestionStripViewAcces
             }
         }
     }
-    override fun onUpWithPointerActive() {
-        // TODO("Unsupported yet")
-    }
+    override fun onUpWithPointerActive() {}
     override fun onMoveDeletePointer(steps: Int) {
         setNeutralSuggestionStrip()
         val (lBound, rBound) = currentAnchorCursor
@@ -858,7 +831,7 @@ class ChineseIME(val helper: IMEHelper) : IMEInterface, SuggestionStripViewAcces
         }
         coroScope.launch {
             val preedit = rime.getPreedit()
-            var reserved: String
+            val reserved: String
             when {
                 preedit.endsWith(selection) -> {
                     reserved = preedit.removeSuffix(selection).filterNot { it.isWhitespace() }
@@ -941,13 +914,10 @@ class ChineseIME(val helper: IMEHelper) : IMEInterface, SuggestionStripViewAcces
     override fun onEndBatchInput(batchPointers: InputPointers?) {}
     override fun onCancelBatchInput() {}
 
-// Non-behavior methods {{
-// NOTE: These methods are scheduled to have no behavior
     override fun onCancelInput() {}
     override fun onDeviceUnlocked() {}
     override fun onOrientationChanged() {}
     override fun onUpdateSelection(oldSelStart: Int, oldSelEnd: Int, newSelStart: Int, newSelEnd: Int, composingSpanStart: Int, composingSpanEnd: Int) {}
-// Non-behavior methods }}
 
     val debugInfo: String
         get() = "configuration=${prevConfiguration}\nlayoutHint=${layoutHint}\nlocale=${Settings.getInstance().current.mLocale}\nisSimplified=${isSimplifiedChinese(Settings.getInstance().current.mLocale)}\nrawInput=${rawInput.text}"
